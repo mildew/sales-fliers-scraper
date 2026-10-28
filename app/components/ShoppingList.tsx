@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Check, Plus, X, ShoppingCart, ChevronDown } from "lucide-react";
+import { Check, Plus, X, ShoppingCart, ChevronDown, Trash2 } from "lucide-react";
 
 type Store =
   | "food-coop"
@@ -51,6 +51,8 @@ export default function ShoppingList() {
   const [store, setStore] = useState<Store>("food-coop");
   const [items, setItems] = useState<Item[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -102,6 +104,18 @@ export default function ShoppingList() {
 
   const removeItem = (id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const saveEdit = (id: string) => {
+    const trimmed = editText.trim();
+    if (trimmed) {
+      setItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, text: trimmed } : item)),
+      );
+    } else {
+      removeItem(id);
+    }
+    setEditingId(null);
   };
 
   const clearDone = () => {
@@ -181,6 +195,14 @@ export default function ShoppingList() {
             className="flex-1 h-9 rounded-lg border border-border/60 bg-muted/30 px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/50 transition-all"
           />
           <button
+            onClick={() => setItems([])}
+            disabled={items.length === 0}
+            title="Delete all items"
+            className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-muted/40 text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-[0.97] transition-all disabled:opacity-40 disabled:pointer-events-none disabled:active:scale-100"
+          >
+            <Trash2 className="size-4" />
+          </button>
+          <button
             onClick={addItem}
             disabled={!inputValue.trim()}
             className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 active:scale-[0.97] transition-all disabled:opacity-40 disabled:active:scale-100"
@@ -209,15 +231,38 @@ export default function ShoppingList() {
                 >
                   {item.done && <Check className="size-3" />}
                 </button>
-                <span
-                  className={`flex-1 text-sm transition-all ${
-                    item.done
-                      ? "text-muted-foreground line-through"
-                      : "text-foreground"
-                  }`}
-                >
-                  {item.text}
-                </span>
+                {editingId === item.id ? (
+                  <input
+                    type="text"
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    onBlur={() => saveEdit(item.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        saveEdit(item.id);
+                      } else if (e.key === "Escape") {
+                        setEditingId(null);
+                      }
+                    }}
+                    autoFocus
+                    className="flex-1 h-7 rounded border border-border/60 bg-muted/30 px-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                ) : (
+                  <span
+                    onClick={() => {
+                      setEditingId(item.id);
+                      setEditText(item.text);
+                    }}
+                    title="Click to edit"
+                    className={`flex-1 text-sm cursor-pointer transition-all ${
+                      item.done
+                        ? "text-muted-foreground line-through"
+                        : "text-foreground hover:text-primary/80"
+                    }`}
+                  >
+                    {item.text}
+                  </span>
+                )}
                 <button
                   onClick={() => removeItem(item.id)}
                   className="flex size-6 items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all"
