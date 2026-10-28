@@ -195,7 +195,11 @@ export default function ShoppingList() {
             className="flex-1 h-9 rounded-lg border border-border/60 bg-muted/30 px-3 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-ring/50 transition-all"
           />
           <button
-            onClick={() => setItems([])}
+            onClick={() => {
+              if (window.confirm("Are you sure you want to delete all items?")) {
+                setItems([]);
+              }
+            }}
             disabled={items.length === 0}
             title="Delete all items"
             className="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-muted/40 text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:scale-[0.97] transition-all disabled:opacity-40 disabled:pointer-events-none disabled:active:scale-100"
