@@ -562,7 +562,10 @@ export default function HomeContent() {
                   className="flex flex-col"
                 >
                   <div className="px-5 pt-5">
-                    <TabsList className="w-fit">
+                    {/* Four store tabs no longer fit on one row on phones and
+                        the card clips overflow, so let the list wrap instead
+                        of scrolling the last store out of reach. */}
+                    <TabsList className="h-auto w-fit max-w-full flex-wrap gap-1">
                       <TabsTrigger value="ashland-food-coop">
                         Ashland Food Coop
                       </TabsTrigger>
