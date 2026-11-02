@@ -101,21 +101,49 @@ export async function probeMarketOfChoice(): Promise<{
 // ---------------------------------------------------------------------------
 
 const COOP_BASE_URL = "https://ashlandfood.coop";
+// The sales page moved from /sales-flyer to /sales (the old path still 301s,
+// but point at the canonical URL so we don't depend on the redirect).
+const COOP_SALES_URL = `${COOP_BASE_URL}/sales`;
+
+function toAbsoluteCoopUrl(url: string): string {
+  return url.startsWith("http") ? url : COOP_BASE_URL + url;
+}
 
 export function extractCoopPdfLinks(html: string): {
   mainFlyerLink: string | null;
 } {
-  // Main flyer is in /sites/default/files/sales-flyers/
-  // Can be absolute or relative URL
+  // The current flyer is embedded in a pdf.js viewer iframe and exposed as
+  // data-src. Do NOT scan <a href> first: the only plain link on the page is
+  // "Download Previous Week's Flyer", so an href scan silently served last
+  // week's PDF (two different files whose first pages look identical).
+  const dataSrcMatch = html.match(
+    /data-src="([^"]*\/sites\/default\/files\/sales-flyers\/[^"]+\.pdf)"/i
+  );
+  if (dataSrcMatch) {
+    return { mainFlyerLink: toAbsoluteCoopUrl(dataSrcMatch[1]) };
+  }
+
+  // Fallback: the viewer's own file= parameter, URL-encoded once.
+  const viewerMatch = html.match(/viewer\.html\?[^"']*?file=([^&"']+)/i);
+  if (viewerMatch) {
+    let decoded = viewerMatch[1];
+    try {
+      decoded = decodeURIComponent(decoded);
+    } catch (error) {
+      console.error("Failed to decode Co-op flyer viewer URL:", error);
+    }
+    if (/\/sites\/default\/files\/sales-flyers\/[^"']+\.pdf/i.test(decoded)) {
+      return { mainFlyerLink: toAbsoluteCoopUrl(decoded) };
+    }
+  }
+
+  // Legacy markup: a bare link straight to the flyer PDF.
   const mainFlyerMatch = html.match(
     /href="((?:https:\/\/ashlandfood\.coop)?\/sites\/default\/files\/sales-flyers\/[^"]+\.pdf)"/i
   );
-  let mainFlyerLink = mainFlyerMatch ? mainFlyerMatch[1] : null;
-  if (mainFlyerLink && !mainFlyerLink.startsWith("http")) {
-    mainFlyerLink = COOP_BASE_URL + mainFlyerLink;
-  }
-
-  return { mainFlyerLink };
+  return {
+    mainFlyerLink: mainFlyerMatch ? toAbsoluteCoopUrl(mainFlyerMatch[1]) : null,
+  };
 }
 
 export function extractFilename(url: string): string {
@@ -127,7 +155,7 @@ export async function probeAshlandCoop(): Promise<{
   mainFlyerLink: string | null;
   mainFlyerFileName: string | null;
 }> {
-  const response = await probeFetch(`${COOP_BASE_URL}/sales-flyer`);
+  const response = await probeFetch(COOP_SALES_URL);
   if (!response || !response.ok) {
     return { mainFlyerLink: null, mainFlyerFileName: null };
   }
