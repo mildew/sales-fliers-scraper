@@ -29,12 +29,12 @@ export interface UnifiedCache {
     lastUpdated: string;
   };
   albertsons?: {
-    flyers: Array<{
-      title: string;
-      dateRange: string;
-      imageUrl: string;
-    }>;
-    lastUpdated: string;
+    publicationId: number;
+    name: string;
+    dateRange: string;
+    pdfUrl: string;
+    pdfFileName: string;
+    lastUpdated?: string;
   };
   timestamp: string;
 }

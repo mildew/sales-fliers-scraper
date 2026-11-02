@@ -137,3 +137,164 @@ export async function probeAshlandCoop(): Promise<{
     mainFlyerFileName: mainFlyerLink ? extractFilename(mainFlyerLink) : null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Albertsons weekly ad (Angular SPA backed by Flipp's public Flyerkit API)
+// ---------------------------------------------------------------------------
+
+const ALBERTSONS_POSTAL_CODE = process.env.ALBERTSONS_POSTAL_CODE ?? "97520";
+const FLYERKIT_ACCESS_TOKEN = "bfe2071d14d1448296a13b19311ce041";
+
+// Raw shape of the publications endpoint. Only the fields we use are declared;
+// everything is optional because a degraded response may omit any of them.
+export interface FlyerkitPublication {
+  id?: number;
+  name?: string;
+  flyer_type?: string;
+  external_display_name?: string;
+  valid_from?: string;
+  valid_to?: string;
+  pdf_url?: string;
+  total_pages?: number;
+}
+
+export interface AlbertsonsPublication {
+  publicationId: number;
+  name: string;
+  dateRange: string;
+  pdfUrl: string;
+  pdfFileName: string;
+  totalPages: number;
+}
+
+const MONTH_ABBREVIATIONS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+// Build a flyer date range like "Oct 28 – Nov 3, 2026" from the ISO validity
+// timestamps. Only the YYYY-MM-DD prefix is parsed with a regex - reading a
+// full Date through local getters would shift the day in timezones on either
+// side of the offset. Returns "" when either date cannot be parsed.
+export function formatAlbertsonsDateRange(
+  validFrom: string,
+  validTo: string
+): string {
+  const fromMatch = validFrom.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const toMatch = validTo.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!fromMatch || !toMatch) {
+    return "";
+  }
+
+  const fromMonth = Number(fromMatch[2]);
+  const fromDay = Number(fromMatch[3]);
+  const toMonth = Number(toMatch[2]);
+  const toDay = Number(toMatch[3]);
+  if (
+    fromMonth < 1 ||
+    fromMonth > 12 ||
+    fromDay < 1 ||
+    fromDay > 31 ||
+    toMonth < 1 ||
+    toMonth > 12 ||
+    toDay < 1 ||
+    toDay > 31
+  ) {
+    return "";
+  }
+
+  const year = toMatch[1];
+  return `${MONTH_ABBREVIATIONS[fromMonth - 1]} ${fromDay} – ${
+    MONTH_ABBREVIATIONS[toMonth - 1]
+  } ${toDay}, ${year}`;
+}
+
+// Pick the actual weekly ad out of the publication list. The API also returns
+// ad-hoc publications (e.g. "Big Book of Savings"); prefer the entry explicitly
+// labelled "Weekly Ad", then any non-adhoc flyer, then whatever is left.
+export function pickAlbertsonsWeeklyAd(
+  pubs: FlyerkitPublication[]
+): FlyerkitPublication | null {
+  if (!Array.isArray(pubs) || pubs.length === 0) {
+    return null;
+  }
+
+  // We need both an id (the cache marker) and a PDF URL (what the client
+  // loads), so entries missing either are unusable.
+  const usable = pubs.filter(
+    (pub) =>
+      typeof pub.id === "number" &&
+      typeof pub.pdf_url === "string" &&
+      pub.pdf_url.length > 0
+  );
+  if (usable.length === 0) {
+    return null;
+  }
+
+  const weeklyAd = usable.find(
+    (pub) => pub.external_display_name === "Weekly Ad"
+  );
+  if (weeklyAd) {
+    return weeklyAd;
+  }
+
+  const nonAdhoc = usable.find(
+    (pub) => !(pub.flyer_type ?? "").toLowerCase().includes("adhoc")
+  );
+  return nonAdhoc ?? usable[0];
+}
+
+export async function probeAlbertsons(): Promise<AlbertsonsPublication | null> {
+  const params = new URLSearchParams({
+    access_token: FLYERKIT_ACCESS_TOKEN,
+    locale: "en-US",
+    postal_code: ALBERTSONS_POSTAL_CODE,
+  });
+  const response = await probeFetch(
+    `https://api.flipp.com/flyerkit/v4.0/publications/albertsons?${params.toString()}`
+  );
+  if (!response || !response.ok) {
+    return null;
+  }
+
+  let publications: FlyerkitPublication[];
+  try {
+    publications = await response.json();
+  } catch (error) {
+    console.error("Failed to parse Albertsons publications:", error);
+    return null;
+  }
+
+  const publication = pickAlbertsonsWeeklyAd(publications);
+  if (!publication || publication.id === undefined || !publication.pdf_url) {
+    return null;
+  }
+
+  const validFrom = publication.valid_from ?? "";
+  const dateRange = formatAlbertsonsDateRange(
+    validFrom,
+    publication.valid_to ?? ""
+  );
+
+  return {
+    publicationId: publication.id,
+    name:
+      publication.name ??
+      publication.external_display_name ??
+      "Albertsons Weekly Ad",
+    dateRange,
+    pdfUrl: publication.pdf_url,
+    pdfFileName: `albertsons-weekly-ad-${validFrom.slice(0, 10)}.pdf`,
+    totalPages: publication.total_pages ?? 0,
+  };
+}

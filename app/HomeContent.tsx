@@ -16,6 +16,7 @@ interface ScrapeResult {
   screenshot?: string;
   error?: string;
   pdfData?: string;
+  pdfUrl?: string;
   pdfFileName?: string;
   pdfDate?: string;
   mainFlyerLink?: string;
@@ -29,16 +30,28 @@ interface ScrapeResult {
   ionFileName?: string;
   ionUrl?: string;
   ionDateRange?: string;
+  // Albertsons specific fields
+  albertsonsPublicationId?: number;
 }
 
-type StoreKey = "food-coop" | "shop-n-kart" | "market-of-choice";
+type StoreKey =
+  | "food-coop"
+  | "shop-n-kart"
+  | "market-of-choice"
+  | "albertsons";
 
-const STORES: StoreKey[] = ["food-coop", "shop-n-kart", "market-of-choice"];
+const STORES: StoreKey[] = [
+  "food-coop",
+  "shop-n-kart",
+  "market-of-choice",
+  "albertsons",
+];
 
 const ACTIVE_STORE_KEYS: Record<string, StoreKey> = {
   "ashland-food-coop": "food-coop",
   "shop-n-kart": "shop-n-kart",
   "market-of-choice": "market-of-choice",
+  albertsons: "albertsons",
 };
 
 const FLYER_CACHE_TTL_MS = 4 * 60 * 60 * 1000;
@@ -50,6 +63,7 @@ interface FlyerCheck {
   shopNKart: { dateRange: string | null; ionDateRange: string | null };
   marketOfChoice: { pdfDate: string | null };
   ashlandCoop: { mainFlyerFileName: string | null };
+  albertsons?: { publicationId: number | null };
 }
 
 export default function HomeContent() {
@@ -63,6 +77,8 @@ export default function HomeContent() {
   );
   const [marketOfChoiceResult, setMarketOfChoiceResult] =
     useState<ScrapeResult | null>(null);
+  const [albertsonsResult, setAlbertsonsResult] =
+    useState<ScrapeResult | null>(null);
   const [lastUpdatedLabel, setLastUpdatedLabel] = useState<string | null>(null);
   const [refreshCountdown, setRefreshCountdown] = useState<string | null>(null);
   // Whether each store's visible flyer came from the local cache (vs a fresh
@@ -74,9 +90,16 @@ export default function HomeContent() {
   const getCacheKey = (store: StoreKey) => `flyers-cache:${store}`;
 
   const resultFor = (store: StoreKey): ScrapeResult | null => {
-    if (store === "food-coop") return foodCoopResult;
-    if (store === "shop-n-kart") return shopNKartResult;
-    return marketOfChoiceResult;
+    switch (store) {
+      case "food-coop":
+        return foodCoopResult;
+      case "shop-n-kart":
+        return shopNKartResult;
+      case "market-of-choice":
+        return marketOfChoiceResult;
+      case "albertsons":
+        return albertsonsResult;
+    }
   };
 
   // Read the persisted cache: in-memory Map first, then IndexedDB (which can
@@ -124,12 +147,19 @@ export default function HomeContent() {
   };
 
   const applyStoreResult = (store: StoreKey, result: ScrapeResult | null) => {
-    if (store === "food-coop") {
-      setFoodCoopResult(result);
-    } else if (store === "shop-n-kart") {
-      setShopNKartResult(result);
-    } else {
-      setMarketOfChoiceResult(result);
+    switch (store) {
+      case "food-coop":
+        setFoodCoopResult(result);
+        return;
+      case "shop-n-kart":
+        setShopNKartResult(result);
+        return;
+      case "market-of-choice":
+        setMarketOfChoiceResult(result);
+        return;
+      case "albertsons":
+        setAlbertsonsResult(result);
+        return;
     }
   };
 
@@ -226,9 +256,15 @@ export default function HomeContent() {
           (result.ionDateRange ?? null) === check.shopNKart.ionDateRange)
       );
     }
+    if (store === "market-of-choice") {
+      return (
+        check.marketOfChoice.pdfDate === null ||
+        (result.pdfDate ?? null) === check.marketOfChoice.pdfDate
+      );
+    }
+    const liveId = check.albertsons?.publicationId ?? null;
     return (
-      check.marketOfChoice.pdfDate === null ||
-      (result.pdfDate ?? null) === check.marketOfChoice.pdfDate
+      liveId === null || (result.albertsonsPublicationId ?? null) === liveId
     );
   };
 
@@ -265,6 +301,17 @@ export default function HomeContent() {
     if (store === "shop-n-kart") {
       const response = await fetch(
         `/api/scrape/shop-n-kart?t=${Date.now()}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+        },
+      );
+      return await response.json();
+    }
+    if (store === "albertsons") {
+      const response = await fetch(
+        `/api/scrape/albertsons?t=${Date.now()}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -523,6 +570,7 @@ export default function HomeContent() {
                       <TabsTrigger value="market-of-choice">
                         Market of Choice
                       </TabsTrigger>
+                      <TabsTrigger value="albertsons">Albertsons</TabsTrigger>
                     </TabsList>
                   </div>
 
@@ -629,6 +677,37 @@ export default function HomeContent() {
                               marketOfChoiceResult.dateRange || "Current Week"
                             }
                             url="https://marketofchoice.com/specials/weekly/"
+                            onPdfError={onPdfError}
+                          />
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                          No flyers are available yet for this store.
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="albertsons" className="mt-0 space-y-4">
+                      {isLoadingFlyers && !albertsonsResult ? (
+                        <div className="flex items-center justify-center rounded-lg border border-dashed border-border p-8 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading Albertsons flyers...
+                          </div>
+                        </div>
+                      ) : albertsonsResult?.error ? (
+                        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                          {albertsonsResult.error}
+                        </div>
+                      ) : albertsonsResult?.pdfUrl ? (
+                        <div className="grid grid-cols-1 gap-4">
+                          <FlyerCard
+                            title="Albertsons Weekly Ad"
+                            description="Weekly deals and specials from Albertsons"
+                            pdfUrl={albertsonsResult.pdfUrl}
+                            pdfFileName={albertsonsResult.pdfFileName}
+                            dateRange={albertsonsResult.dateRange}
+                            url="https://www.albertsons.com/weeklyad"
                             onPdfError={onPdfError}
                           />
                         </div>

@@ -15,6 +15,7 @@ interface FlyerCardProps {
   title: string;
   description: string;
   pdfData?: string;
+  pdfUrl?: string;
   pdfFileName?: string;
   url?: string;
   dateRange?: string;
@@ -26,6 +27,7 @@ export default function FlyerCard({
   title,
   description,
   pdfData,
+  pdfUrl,
   pdfFileName,
   url,
   dateRange,
@@ -33,6 +35,7 @@ export default function FlyerCard({
   onPdfError,
 }: FlyerCardProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const pdfSource = pdfData ?? pdfUrl;
 
   // Extract date from URL or filename
   const extractDateFromUrl = (url?: string): string | null => {
@@ -236,9 +239,9 @@ export default function FlyerCard({
             </DialogClose>
           </div>
           <div className="h-[calc(100vh-10rem)]">
-            {pdfData ? (
+            {pdfSource ? (
               <PDFViewer
-                file={pdfData}
+                file={pdfSource}
                 onDocumentLoadSuccess={onDocumentLoadSuccess}
                 onError={onPdfError}
                 onClose={() => setIsOpen(false)}
